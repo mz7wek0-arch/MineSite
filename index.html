@@ -1,195 +1,933 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Block World</title>
 
-  <meta charset="UTF-8">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #87ceeb;
+            font-family: Arial, sans-serif;
+        }
 
-  <title>J01N TH3 3MP1R3!</title>
+        #game {
+            position: fixed;
+            inset: 0;
+        }
 
-  <link
-    rel="stylesheet"
-    href="estilo.css"
-  >
+        canvas {
+            display: block;
+        }
 
+        #crosshair {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: 18px;
+            height: 18px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #crosshair::before,
+        #crosshair::after {
+            content: "";
+            position: absolute;
+            background: white;
+            box-shadow: 0 0 2px black;
+        }
+
+        #crosshair::before {
+            width: 2px;
+            height: 18px;
+            left: 8px;
+            top: 0;
+        }
+
+        #crosshair::after {
+            width: 18px;
+            height: 2px;
+            left: 0;
+            top: 8px;
+        }
+
+        #fps {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,.45);
+            padding: 6px 10px;
+            font-size: 14px;
+            z-index: 20;
+            border-radius: 4px;
+        }
+
+        #hotbar {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 5px;
+            z-index: 20;
+        }
+
+        .slot {
+            width: 55px;
+            height: 55px;
+            border: 3px solid #555;
+            background: rgba(0,0,0,.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .slot.selected {
+            border-color: white;
+            transform: scale(1.08);
+        }
+
+        #startScreen {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: rgba(0,0,0,.65);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: white;
+        }
+
+        #startScreen h1 {
+            font-size: 52px;
+            margin-bottom: 20px;
+            text-shadow: 4px 4px 0 #333;
+        }
+
+        #startScreen p {
+            margin: 6px;
+        }
+
+        #startButton {
+            margin-top: 25px;
+            padding: 15px 35px;
+            font-size: 20px;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            background: #4caf50;
+            color: white;
+            border-radius: 5px;
+        }
+
+        #startButton:hover {
+            background: #43a047;
+        }
+    </style>
 </head>
 
 <body>
 
-  <div id="interfaceJogo">
+<div id="game"></div>
 
-    <div id="mira">+</div>
+<div id="crosshair"></div>
 
-    <div id="fps">
-      FPS: --
-    </div>
+<div id="fps">
+    FPS: 0
+</div>
 
-    <div id="statusMovimento">
-      ANDANDO
-    </div>
+<div id="hotbar">
+    <div class="slot selected" data-block="grass">1<br>GRAMA</div>
+    <div class="slot" data-block="dirt">2<br>TERRA</div>
+    <div class="slot" data-block="stone">3<br>PEDRA</div>
+    <div class="slot" data-block="wood">4<br>MADEIRA</div>
+</div>
 
-    <div id="quebrando">
+<div id="startScreen">
+    <h1>BLOCK WORLD</h1>
 
-      <div id="textoQuebrando">
-        Quebrando
-      </div>
+    <p>WASD - Mover</p>
+    <p>Mouse - Olhar</p>
+    <p>Espaço - Pular</p>
+    <p>Botão esquerdo - Quebrar</p>
+    <p>Botão direito - Colocar bloco</p>
 
-      <div id="barraQuebrando">
+    <button id="startButton">
+        JOGAR
+    </button>
+</div>
 
-        <div
-          id="progressoQuebrando"
-        ></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
-      </div>
+<script>
+/* =========================================================
+   CONFIGURAÇÕES
+========================================================= */
 
-    </div>
+const WORLD_SIZE = 40;
+const WORLD_HEIGHT = 12;
+const BLOCK_SIZE = 1;
 
-    <div id="blocoSelecionado">
+const game = document.getElementById("game");
+const fpsElement = document.getElementById("fps");
+const startScreen = document.getElementById("startScreen");
+const startButton = document.getElementById("startButton");
 
-      <span id="nomeBloco">
-        Pedra
-      </span>
+/* =========================================================
+   THREE.JS
+========================================================= */
 
-      <div
-        id="corSelecionada"
-        class="bloco azul"
-      ></div>
+const scene = new THREE.Scene();
 
-    </div>
+scene.background = new THREE.Color(0x87ceeb);
 
-    <div id="barraBlocos">
+scene.fog = new THREE.Fog(
+    0x87ceeb,
+    25,
+    80
+);
 
-      <div
-        class="slot selecionado"
-        id="slot1"
-      >
+const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    200
+);
 
-        <span class="numero">1</span>
+camera.position.set(
+    0,
+    5,
+    8
+);
 
-        <div
-          class="bloco azul"
-        ></div>
+const renderer = new THREE.WebGLRenderer({
+    antialias: false,
+    powerPreference: "high-performance"
+});
 
-        <span
-          class="quantidade"
-          id="quantidade1"
-        >
-          0
-        </span>
+renderer.setSize(
+    window.innerWidth,
+    window.innerHeight
+);
 
-      </div>
+renderer.setPixelRatio(
+    Math.min(window.devicePixelRatio, 1.5)
+);
 
-      <div
-        class="slot"
-        id="slot2"
-      >
+renderer.shadowMap.enabled = false;
 
-        <span class="numero">2</span>
+game.appendChild(renderer.domElement);
 
-        <div
-          class="bloco verde"
-        ></div>
+/* =========================================================
+   LUZ
+========================================================= */
 
-        <span
-          class="quantidade"
-          id="quantidade2"
-        >
-          0
-        </span>
+const ambientLight = new THREE.HemisphereLight(
+    0xffffff,
+    0x555555,
+    1.5
+);
 
-      </div>
+scene.add(ambientLight);
 
-      <div
-        class="slot"
-        id="slot3"
-      >
+const sun = new THREE.DirectionalLight(
+    0xffffff,
+    1.2
+);
 
-        <span class="numero">3</span>
+sun.position.set(
+    30,
+    50,
+    20
+);
 
-        <div
-          class="bloco vermelho"
-        ></div>
+scene.add(sun);
 
-        <span
-          class="quantidade"
-          id="quantidade3"
-        >
-          0
-        </span>
+/* =========================================================
+   MATERIAIS
+========================================================= */
 
-      </div>
+const materials = {
 
-      <div
-        class="slot"
-        id="slot4"
-      >
+    grass: new THREE.MeshLambertMaterial({
+        color: 0x55aa35
+    }),
 
-        <span class="numero">4</span>
+    dirt: new THREE.MeshLambertMaterial({
+        color: 0x8b5a2b
+    }),
 
-        <div
-          class="bloco madeira"
-        ></div>
+    stone: new THREE.MeshLambertMaterial({
+        color: 0x777777
+    }),
 
-        <span
-          class="quantidade"
-          id="quantidade4"
-        >
-          0
-        </span>
+    wood: new THREE.MeshLambertMaterial({
+        color: 0x8b5a2b
+    }),
 
-      </div>
+    leaves: new THREE.MeshLambertMaterial({
+        color: 0x2e8b35
+    })
+};
 
-      <div
-        class="slot"
-        id="slot5"
-      >
+/* =========================================================
+   CUBO
+========================================================= */
 
-        <span class="numero">5</span>
+const cubeGeometry = new THREE.BoxGeometry(
+    BLOCK_SIZE,
+    BLOCK_SIZE,
+    BLOCK_SIZE
+);
 
-        <div
-          class="bloco terra"
-        ></div>
+/* =========================================================
+   MUNDO
+========================================================= */
 
-        <span
-          class="quantidade"
-          id="quantidade5"
-        >
-          0
-        </span>
+const blocks = new Map();
 
-      </div>
+function blockKey(x, y, z) {
+    return `${x},${y},${z}`;
+}
 
-      <div
-        class="slot"
-        id="slot6"
-      >
+function addBlock(x, y, z, type) {
 
-        <span class="numero">6</span>
+    const key = blockKey(x, y, z);
 
-        <div
-          class="bloco areia"
-        ></div>
+    if (blocks.has(key)) return;
 
-        <span
-          class="quantidade"
-          id="quantidade6"
-        >
-          0
-        </span>
+    const material = materials[type];
 
-      </div>
+    if (!material) return;
 
-    </div>
+    const cube = new THREE.Mesh(
+        cubeGeometry,
+        material
+    );
 
-  </div>
+    cube.position.set(
+        x,
+        y,
+        z
+    );
 
-<script type="module" src="script.js?v=999"></script>
+    cube.userData = {
+        x,
+        y,
+        z,
+        type
+    };
+
+    scene.add(cube);
+
+    blocks.set(key, cube);
+}
+
+function removeBlock(x, y, z) {
+
+    const key = blockKey(x, y, z);
+
+    const block = blocks.get(key);
+
+    if (!block) return;
+
+    scene.remove(block);
+
+    blocks.delete(key);
+}
+
+/* =========================================================
+   TERRENO
+========================================================= */
+
+function terrainHeight(x, z) {
+
+    const h =
+        3 +
+        Math.sin(x * 0.25) * 1.2 +
+        Math.cos(z * 0.23) * 1.2 +
+        Math.sin((x + z) * 0.12) * 1.5;
+
+    return Math.floor(h);
+}
+
+function generateWorld() {
+
+    for (let x = -WORLD_SIZE / 2; x < WORLD_SIZE / 2; x++) {
+
+        for (let z = -WORLD_SIZE / 2; z < WORLD_SIZE / 2; z++) {
+
+            const height = terrainHeight(x, z);
+
+            for (let y = 0; y <= height; y++) {
+
+                let type;
+
+                if (y === height) {
+                    type = "grass";
+                }
+                else if (y >= height - 2) {
+                    type = "dirt";
+                }
+                else {
+                    type = "stone";
+                }
+
+                addBlock(
+                    x,
+                    y,
+                    z,
+                    type
+                );
+            }
+
+            /* Árvores */
+
+            if (
+                Math.random() < 0.025 &&
+                Math.abs(x) > 3 &&
+                Math.abs(z) > 3
+            ) {
+
+                createTree(
+                    x,
+                    height + 1,
+                    z
+                );
+            }
+        }
+    }
+}
+
+/* =========================================================
+   ÁRVORE
+========================================================= */
+
+function createTree(x, y, z) {
+
+    for (let i = 0; i < 4; i++) {
+
+        addBlock(
+            x,
+            y + i,
+            z,
+            "wood"
+        );
+    }
+
+    for (let dx = -2; dx <= 2; dx++) {
+
+        for (let dz = -2; dz <= 2; dz++) {
+
+            for (let dy = 2; dy <= 4; dy++) {
+
+                const distance =
+                    Math.abs(dx) +
+                    Math.abs(dz);
+
+                if (distance <= 2) {
+
+                    addBlock(
+                        x + dx,
+                        y + dy,
+                        z + dz,
+                        "leaves"
+                    );
+                }
+            }
+        }
+    }
+}
+
+generateWorld();
+
+/* =========================================================
+   CONTROLES
+========================================================= */
+
+const keys = {};
+
+document.addEventListener(
+    "keydown",
+    event => {
+
+        keys[event.code] = true;
+
+        if (
+            event.code === "Space" &&
+            player.onGround
+        ) {
+
+            player.velocityY = 8;
+            player.onGround = false;
+        }
+
+        if (
+            event.code === "Digit1"
+        ) {
+            selectedBlock = "grass";
+            updateHotbar();
+        }
+
+        if (
+            event.code === "Digit2"
+        ) {
+            selectedBlock = "dirt";
+            updateHotbar();
+        }
+
+        if (
+            event.code === "Digit3"
+        ) {
+            selectedBlock = "stone";
+            updateHotbar();
+        }
+
+        if (
+            event.code === "Digit4"
+        ) {
+            selectedBlock = "wood";
+            updateHotbar();
+        }
+    }
+);
+
+document.addEventListener(
+    "keyup",
+    event => {
+        keys[event.code] = false;
+    }
+);
+
+/* =========================================================
+   MOUSE
+========================================================= */
+
+let yaw = 0;
+let pitch = 0;
+
+document.addEventListener(
+    "mousemove",
+    event => {
+
+        if (
+            document.pointerLockElement !== renderer.domElement
+        ) {
+            return;
+        }
+
+        yaw -= event.movementX * 0.002;
+        pitch -= event.movementY * 0.002;
+
+        pitch = Math.max(
+            -Math.PI / 2 + 0.01,
+            Math.min(
+                Math.PI / 2 - 0.01,
+                pitch
+            )
+        );
+
+        camera.rotation.order = "YXZ";
+
+        camera.rotation.y = yaw;
+        camera.rotation.x = pitch;
+    }
+);
+
+/* =========================================================
+   JOGADOR
+========================================================= */
+
+const player = {
+
+    velocityY: 0,
+
+    speed: 5,
+
+    onGround: false,
+
+    height: 1.7
+};
+
+/* =========================================================
+   COLISÃO SIMPLES
+========================================================= */
+
+function getGroundHeight(x, z) {
+
+    const bx = Math.floor(x);
+    const bz = Math.floor(z);
+
+    let highest = -100;
+
+    for (let y = 0; y < WORLD_HEIGHT; y++) {
+
+        if (
+            blocks.has(
+                blockKey(bx, y, bz)
+            )
+        ) {
+            highest = y + 0.5;
+        }
+    }
+
+    return highest;
+}
+
+/* =========================================================
+   MOVIMENTO
+========================================================= */
+
+function updatePlayer(delta) {
+
+    const direction = new THREE.Vector3();
+
+    if (keys["KeyW"]) {
+        direction.z -= 1;
+    }
+
+    if (keys["KeyS"]) {
+        direction.z += 1;
+    }
+
+    if (keys["KeyA"]) {
+        direction.x -= 1;
+    }
+
+    if (keys["KeyD"]) {
+        direction.x += 1;
+    }
+
+    if (direction.length() > 0) {
+
+        direction.normalize();
+
+        direction.applyAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            yaw
+        );
+
+        camera.position.x +=
+            direction.x *
+            player.speed *
+            delta;
+
+        camera.position.z +=
+            direction.z *
+            player.speed *
+            delta;
+    }
+
+    /* Gravidade */
+
+    player.velocityY -=
+        20 *
+        delta;
+
+    camera.position.y +=
+        player.velocityY *
+        delta;
+
+    const ground =
+        getGroundHeight(
+            camera.position.x,
+            camera.position.z
+        );
+
+    if (
+        camera.position.y <
+        ground + player.height
+    ) {
+
+        camera.position.y =
+            ground + player.height;
+
+        player.velocityY = 0;
+
+        player.onGround = true;
+
+    } else {
+
+        player.onGround = false;
+    }
+}
+
+/* =========================================================
+   RAYCAST
+========================================================= */
+
+const raycaster = new THREE.Raycaster();
+
+function getTargetBlock() {
+
+    raycaster.setFromCamera(
+        new THREE.Vector2(0, 0),
+        camera
+    );
+
+    const objects =
+        Array.from(blocks.values());
+
+    const hits =
+        raycaster.intersectObjects(
+            objects,
+            false
+        );
+
+    if (hits.length === 0) {
+        return null;
+    }
+
+    return hits[0];
+}
+
+/* =========================================================
+   QUEBRAR BLOCO
+========================================================= */
+
+renderer.domElement.addEventListener(
+    "mousedown",
+    event => {
+
+        if (
+            document.pointerLockElement !==
+            renderer.domElement
+        ) {
+            return;
+        }
+
+        const hit =
+            getTargetBlock();
+
+        if (!hit) return;
+
+        const block =
+            hit.object;
+
+        const data =
+            block.userData;
+
+        /* ESQUERDO = QUEBRAR */
+
+        if (event.button === 0) {
+
+            removeBlock(
+                data.x,
+                data.y,
+                data.z
+            );
+        }
+
+        /* DIREITO = COLOCAR */
+
+        if (event.button === 2) {
+
+            const normal =
+                hit.face.normal.clone();
+
+            const position =
+                block.position.clone();
+
+            position.add(normal);
+
+            const x =
+                Math.round(position.x);
+
+            const y =
+                Math.round(position.y);
+
+            const z =
+                Math.round(position.z);
+
+            if (
+                y >= 0 &&
+                y < WORLD_HEIGHT
+            ) {
+
+                addBlock(
+                    x,
+                    y,
+                    z,
+                    selectedBlock
+                );
+            }
+        }
+    }
+);
+
+/* =========================================================
+   DESABILITA MENU DIREITO
+========================================================= */
+
+document.addEventListener(
+    "contextmenu",
+    event => {
+        event.preventDefault();
+    }
+);
+
+/* =========================================================
+   HOTBAR
+========================================================= */
+
+let selectedBlock = "grass";
+
+function updateHotbar() {
+
+    document
+        .querySelectorAll(".slot")
+        .forEach(slot => {
+
+            slot.classList.remove(
+                "selected"
+            );
+
+            if (
+                slot.dataset.block ===
+                selectedBlock
+            ) {
+
+                slot.classList.add(
+                    "selected"
+                );
+            }
+        });
+}
+
+/* =========================================================
+   INICIAR
+========================================================= */
+
+startButton.addEventListener(
+    "click",
+    () => {
+
+        startScreen.style.display =
+            "none";
+
+        renderer.domElement.requestPointerLock();
+    }
+);
+
+renderer.domElement.addEventListener(
+    "click",
+    () => {
+
+        if (
+            document.pointerLockElement !==
+            renderer.domElement
+        ) {
+
+            renderer.domElement.requestPointerLock();
+        }
+    }
+);
+
+/* =========================================================
+   FPS
+========================================================= */
+
+let frames = 0;
+let fpsTime = performance.now();
+
+function updateFPS() {
+
+    frames++;
+
+    const now =
+        performance.now();
+
+    if (
+        now - fpsTime >= 1000
+    ) {
+
+        fpsElement.textContent =
+            "FPS: " + frames;
+
+        frames = 0;
+
+        fpsTime = now;
+    }
+}
+
+/* =========================================================
+   LOOP
+========================================================= */
+
+let previousTime =
+    performance.now();
+
+function animate() {
+
+    requestAnimationFrame(
+        animate
+    );
+
+    const now =
+        performance.now();
+
+    let delta =
+        (now - previousTime) / 1000;
+
+    previousTime = now;
+
+    /* Evita problemas quando a aba trava */
+
+    delta = Math.min(
+        delta,
+        0.05
+    );
+
+    updatePlayer(delta);
+
+    updateFPS();
+
+    renderer.render(
+        scene,
+        camera
+    );
+}
+
+animate();
+
+/* =========================================================
+   RESIZE
+========================================================= */
+
+window.addEventListener(
+    "resize",
+    () => {
+
+        camera.aspect =
+            window.innerWidth /
+            window.innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+            window.innerWidth,
+            window.innerHeight
+        );
+    }
+);
+
+</script>
 
 </body>
-
 </html>
